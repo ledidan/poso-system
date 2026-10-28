@@ -1,0 +1,140 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/admin/me",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/overview",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/stores",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/stores/export.xlsx",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/stores",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/stores/:shopId",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/stores/:shopId",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/campaigns",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/campaigns",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/campaigns/:campaignId",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/orders",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/users",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/users",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/users/:username",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/users/:username",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/subscriptions",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/subscriptions/:shopId",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/customers",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/support-tickets",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/support-tickets",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/support-tickets/:id",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/support-tickets/:id",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  },
+  {
+    "method": "ALL",
+    "path": "/api/admin/audit-logs",
+    "authentication": "admin session",
+    "authorization": "system administrator"
+  }
+]

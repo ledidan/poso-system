@@ -1,0 +1,15 @@
+# Workers local preview. Use a strong credential even for this preview.
+ADMIN_USERNAME=
+ADMIN_PASSWORD=
+ADMIN_SESSION_SECRET=
+ADMIN_ORIGIN=https://localhost:8787
+ADMIN_COOKIE_SECURE=true
+TRUST_PROXY=
+FIREBASE_PROJECT_ID=
+FIREBASE_PRIVATE_KEY=""
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_DATABASE_URL=
+# All three optional fields are required for a dedicated messaging project.
+FCM_FIREBASE_PROJECT_ID=
+FCM_FIREBASE_CLIENT_EMAIL=
+FCM_FIREBASE_PRIVATE_KEY=""

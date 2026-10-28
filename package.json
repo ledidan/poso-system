@@ -1,0 +1,40 @@
+{
+  "name": "poso-central-admin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hệ thống quản trị tập trung cho toàn bộ cửa hàng POSO",
+  "scripts": {
+    "dev": "concurrently -n API,WEB -c blue,magenta \"node --watch server/index.js\" \"vite\"",
+    "build": "NODE_ENV=production vite build",
+    "start": "NODE_ENV=production node server/index.js",
+    "dev:worker": "wrangler dev --local --port 8787 --local-protocol https",
+    "build:worker": "npm run build && wrangler deploy --dry-run --outdir worker-dist",
+    "deploy:worker": "npm run build && wrangler deploy",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@fontsource-variable/noto-sans": "^5.3.0",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.4.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^0.468.0",
+    "nanoid": "^5.1.5",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.0",
+    "iconv-lite": "^0.7.3",
+    "vite": "^6.4.0",
+    "wrangler": "^4.153.0"
+  }
+}

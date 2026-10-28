@@ -1,0 +1,51 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import express from "express";
+import { createMemoryDatabase } from "./FirebaseMemory.js";
+import { validateMaintenance, saveMaintenance, cancelMaintenance } from "../server/maintenance.js";
+import { createAdminRouter } from "../server/admin-router.js";
+const input = { title: "Bảo trì POSO", message: "Nâng cấp dịch vụ.", displayFrom: "2030-01-01T01:00:00+07:00", startsAt: "2030-01-01T02:00:00+07:00", endsAt: "2030-01-01T03:00:00+07:00", status: "draft", audiences: ["merchant", "mobile"] };
+const save = (db, id, fields = {}) => saveMaintenance({ db, id, input: { ...input, ...fields }, actor: "test-admin", now: Date.parse("2029-12-31T00:00:00Z") });
+test("drafts remain private; publishing exposes only public fields and atomically retires the preceding notice", async () => {
+  const db = createMemoryDatabase();
+  await save(db, "first"); assert.equal(db.read("systemAdmin/maintenance/current"), null);
+  await save(db, "first", { status: "published" });
+  assert.equal(db.read("systemAdmin/maintenance/current/id"), "first");
+  assert.equal(db.read("systemAdmin/maintenance/current/createdBy"), null);
+  await save(db, "second", { status: "published" });
+  assert.equal(db.read("systemAdmin/maintenance/current/id"), "second");
+  assert.equal(db.read("systemAdmin/maintenance/notices/first/status"), "retired");
+  await cancelMaintenance({ db, id: "first", actor: "test-admin" });
+  assert.equal(db.read("systemAdmin/maintenance/current/id"), "second");
+  await cancelMaintenance({ db, id: "second", actor: "test-admin" });
+  assert.equal(db.read("systemAdmin/maintenance/current"), null);
+  assert.equal(db.read("systemAdmin/maintenance/notices/second/status"), "canceled");
+});
+test("editing the current notice back to draft withdraws it without deleting its history", async () => {
+  const db = createMemoryDatabase(); await save(db, "first", { status: "published" });
+  const createdAt = db.read("systemAdmin/maintenance/notices/first/createdAt");
+  await save(db, "first"); assert.equal(db.read("systemAdmin/maintenance/current"), null);
+  assert.equal(db.read("systemAdmin/maintenance/notices/first/createdAt"), createdAt);
+});
+test("rejects invalid dates, text, audiences and finished publication before any write", async () => {
+  for (const fields of [{ title: " " }, { message: "x".repeat(2001) }, { endsAt: input.startsAt }, { displayFrom: "invalid" }, { audiences: [] }, { audiences: ["all"] }, { status: "active" }]) assert.throws(() => validateMaintenance({ ...input, ...fields }), { status: 400 });
+  const db = createMemoryDatabase();
+  await assert.rejects(saveMaintenance({ db, input: { ...input, status: "published" }, actor: "admin", now: Date.parse("2031-01-01") }), { status: 400 });
+  await assert.rejects(save(db, "constructor"), { status: 400 });
+  assert.deepEqual(db.writes, []);
+});
+test("maintenance routes inherit admin authentication and validate IDs", async t => {
+  const db = createMemoryDatabase(), app = express(); app.use(express.json());
+  app.use("/api/admin", createAdminRouter({ db, authenticate: (req, res, next) => { if (req.headers["x-test-admin"] !== "yes") return res.sendStatus(401); req.adminUser = { username: "test-admin" }; next(); } }));
+  const server = app.listen(0, "127.0.0.1"); await new Promise(resolve => server.once("listening", resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${server.address().port}/api/admin/maintenance`;
+  assert.equal((await fetch(url)).status, 401);
+  assert.equal((await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) })).status, 401);
+  assert.deepEqual(db.writes, []);
+  const headers = { "Content-Type": "application/json", "x-test-admin": "yes" };
+  const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(input) }); assert.equal(response.status, 201);
+  const { notice } = await response.json(); assert.equal(notice.createdBy, "test-admin");
+  assert.equal((await (await fetch(url, { headers })).json()).notices.length, 1);
+  assert.equal((await fetch(`${url}/constructor/cancel`, { method: "POST", headers, body: "{}" })).status, 400);
+});

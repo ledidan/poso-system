@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "poso-central-admin",
+  "main": "server/worker.js",
+  "compatibility_date": "2026-10-27",
+  "workers_dev": true,
+  "alias": { "iconv-lite": "./node_modules/iconv-lite/lib/index.js" },
+  "define": { "process.env.NODE_ENV": "\"production\"" },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": { "enabled": true }
+}
