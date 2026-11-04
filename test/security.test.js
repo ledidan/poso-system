@@ -196,6 +196,24 @@ test("production requires HTTPS and uses Secure cookies, CSP, no-store and safe 
   assert.match(missing.headers.get("content-type"), /json/);
 });
 
+test("TRUST_PROXY=false disables forwarding trust and permits local startup", async (t) => {
+  configure(t);
+  for (const value of ["false", " FALSE ", ""]) {
+    process.env.TRUST_PROXY = value;
+    assert.equal(trustedProxies(), false);
+    assert.doesNotThrow(() => assertProductionConfig({ databaseConfigured: true }));
+  }
+  process.env.TRUST_PROXY = "false";
+  const { app } = createApp({ services: { db: createMemoryDatabase() } });
+  app.get("/test-proxy", (req, res) => res.json({ ip: req.ip, secure: req.secure }));
+  const url = await serve(t, app);
+  const response = await fetch(`${url}/test-proxy`, { headers: { "X-Forwarded-For": "192.0.2.11", "X-Forwarded-Proto": "https" } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.secure, false);
+  assert.notEqual(body.ip, "192.0.2.11");
+});
+
 test("untrusted forwarding headers do not bypass HTTPS enforcement", async (t) => {
   configure(t, true);
   const { app } = createApp({ services: { db: createMemoryDatabase() }, authStore: createMemoryAuthStore() });

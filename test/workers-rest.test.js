@@ -21,6 +21,7 @@ const transportFor = (initial = {}) => {
     calls.push({ path, method: options.method, query: url.searchParams, body: options.body, headers });
     let value = raw.read(path);
     if (options.method === "GET") {
+      if (url.searchParams.get("shallow") === "true") return Response.json(value === null ? null : Object.fromEntries(Object.keys(value).map((key) => [key, true])));
       if (url.searchParams.has("orderBy")) {
         const field = JSON.parse(url.searchParams.get("orderBy"));
         const pairs = Object.entries(value || {}).filter(([, item]) => {
@@ -71,6 +72,17 @@ test("conditional transaction retries ETag conflicts with the latest value and a
   const aborted = await transport.db.ref("counter").transaction(() => undefined);
   assert.equal(aborted.committed, false); assert.equal(aborted.snapshot.val(), 10);
   assert.equal(transport.calls.length, before + 1);
+});
+
+test("REST key enumeration uses shallow reads and reports a missing index without exposing provider diagnostics", async () => {
+  const { db, calls } = transportFor({ shops: { one: { privatePayload: "private-data".repeat(500) }, two: {} } });
+  assert.deepEqual(await db.listKeys("shops"), ["one", "two"]);
+  assert.equal(calls[0].query.get("shallow"), "true");
+  const unavailable = createRestDatabase({ databaseURL: "https://offline-test.firebasedatabase.app", getToken: async () => "offline-token", fetcher: async () => Response.json({ error: 'Index not defined, add ".indexOn": "expiresAt", for path "/systemAdmin/security/sessions", to the rules. private-extra-detail' }, { status: 400 }) });
+  await assert.rejects(unavailable.ref("systemAdmin/security/sessions").orderByChild("expiresAt").once("value"), (error) => {
+    assert.equal(error.code, "DATABASE_INDEX_REQUIRED"); assert.equal(error.databaseStatus, 400);
+    assert.match(error.message, /expiresAt/); assert.doesNotMatch(error.message, /private-extra-detail/); return true;
+  });
 });
 
 test("REST refuses invalid values before an atomic update can partially drop fields", async () => {

@@ -1,5 +1,6 @@
+import StoreRegistrationModal from "./components/StoreRegistrationModal.jsx";
 import DailyRevenueSettings from "./components/DailyRevenueSettings.jsx";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Building2, ChevronRight, CircleDollarSign,
   ClipboardList, Clock3, CreditCard, FileSpreadsheet, Headphones, LayoutDashboard, LogOut, Menu,
@@ -192,12 +193,6 @@ function StoreForm({ form, setForm, submit, cancel, reportRoles }) {
   </form>;
 }
 
-function CreateModal({ user, close, created }) {
-  const [form, setForm] = useState({ name:"", address:"", phoneNumber:"", businessCategory:"" }); const [error,setError]=useState("");
-  const submit = async (event) => { event.preventDefault(); try { await request("/stores", user, { method:"POST", body:JSON.stringify(form) }); created(); } catch(e) { setError(e.message); } };
-  const field = (key) => (e) => setForm({ ...form, [key]:e.target.value });
-  return <div className="backdrop modal-wrap" onMouseDown={(e) => e.target === e.currentTarget && close()}><form className="modal" onSubmit={submit}><header><div><span className="icon-tile"><Store size={21} /></span><h2>Thêm cửa hàng</h2><p>Kết nối một điểm bán mới vào hệ thống.</p></div><button type="button" className="icon-button" onClick={close}><X size={20} /></button></header><label>Tên cửa hàng<input value={form.name} onChange={field("name")} placeholder="Ví dụ: POSO Nguyễn Huệ" required /></label><label>Địa chỉ<input value={form.address} onChange={field("address")} placeholder="Số nhà, đường, quận/huyện" /></label><div className="form-row"><label>Số điện thoại<input value={form.phoneNumber} onChange={field("phoneNumber")} /></label><label>Ngành hàng<input value={form.businessCategory} onChange={field("businessCategory")} /></label></div>{error && <div className="error-banner">{error}</div>}<div className="actions"><button type="button" className="button secondary" onClick={close}>Hủy</button><button className="button primary">Tạo cửa hàng</button></div></form></div>;
-}
 
 function UserModal({ current, stores, user, close, saved }) {
   const firstMembership = current?.stores?.[0] || {};
@@ -415,9 +410,55 @@ function CampaignsPage({ campaigns, stores, user, loading, reload }) {
 
 function Admin({ user, onLogout }) {
   const [page,setPage]=useState("overview"), [data,setData]=useState(null), [orders,setOrders]=useState([]), [users,setUsers]=useState([]), [subscriptions,setSubscriptions]=useState([]), [tickets,setTickets]=useState([]), [campaigns,setCampaigns]=useState([]), [loading,setLoading]=useState(true), [error,setError]=useState(""), [drawer,setDrawer]=useState(""), [create,setCreate]=useState(false), [menu,setMenu]=useState(false);
-  const load = async () => { setLoading(true); setError(""); try { const [overview,orderData,userData,subscriptionData,ticketData,campaignData]=await Promise.all([request("/overview?days=30",user),request("/orders?limit=150",user),request("/users",user),request("/subscriptions",user),request("/support-tickets",user),request("/campaigns",user)]); setData(overview);setOrders(orderData.orders);setUsers(userData.users);setSubscriptions(subscriptionData.subscriptions);setTickets(ticketData.tickets);setCampaigns(campaignData.campaigns); } catch(e) { setError(e.message);  } finally { setLoading(false); } };
-  useEffect(()=>{ load(); },[user]); const stores=data?.stores||[]; const titles={overview:"Tổng quan",stores:"Cửa hàng",users:"Người dùng",subscriptions:"Subscription",campaigns:"Campaign thông báo",maintenance:"Bảo trì hệ thống",care:"Chăm sóc người dùng",orders:"Đơn hàng"};
-  return <div className="shell"><Sidebar page={page} setPage={setPage} user={user} onLogout={onLogout} open={menu} setOpen={setMenu}/><main className="main"><header className="topbar"><button className="icon-button menu" onClick={()=>setMenu(true)}><Menu size={20}/></button><strong>{titles[page]}</strong><button className="icon-button" onClick={load}><RefreshCw className={loading?"spin":""} size={18}/></button></header><div className="content">{error&&<div className="error-banner">{error}</div>}{page==="overview"&&<Overview data={data} subscriptions={subscriptions} onStore={setDrawer} setPage={setPage}/>} {page==="stores"&&<Stores stores={stores} loading={loading} onStore={setDrawer} onCreate={()=>setCreate(true)}/>} {page==="users"&&<UsersPage users={users} stores={stores} user={user} loading={loading} reload={load}/>} {page==="subscriptions"&&<SubscriptionsPage subscriptions={subscriptions} user={user} loading={loading} reload={load}/>} {page==="maintenance"&&<MaintenancePage user={user}/>} {page==="campaigns"&&<CampaignsPage campaigns={campaigns} stores={stores} user={user} loading={loading} reload={load}/>} {page==="care"&&<CustomerCarePage users={users} tickets={tickets} stores={stores} user={user} loading={loading} reload={load}/>} {page==="orders"&&<Orders orders={orders} stores={stores} loading={loading}/>}</div></main>{drawer&&<StoreDrawer id={drawer} user={user} close={()=>setDrawer("")} reload={load}/>} {create&&<CreateModal user={user} close={()=>setCreate(false)} created={()=>{setCreate(false);load();}}/>}</div>;
+  const [storeDirectory, setStoreDirectory] = useState(null);
+  const [loadedPage, setLoadedPage] = useState(null);
+  const requestSequence = useRef(0);
+  const load = async () => {
+    const sequence = ++requestSequence.current;
+    const active = () => sequence === requestSequence.current;
+    setLoading(true); setError("");
+    try {
+      if (page === "overview") {
+        const overview = await request("/overview?days=30", user);
+        if (!active()) return;
+        setData(overview); setStoreDirectory(overview.stores);
+        // Render the overview before loading its subscription table. Other pages
+        // fetch their own data when opened instead of six full-system requests.
+        const result = await request("/subscriptions", user);
+        if (active()) setSubscriptions(result.subscriptions);
+      } else if (page === "stores") {
+        const result = await request("/stores?days=30", user);
+        if (active()) setStoreDirectory(result.stores);
+      } else if (page === "subscriptions") {
+        const result = await request("/subscriptions", user);
+        if (active()) setSubscriptions(result.subscriptions);
+      } else if (["users", "care", "orders", "campaigns"].includes(page)) {
+        const directory = await request("/store-options", user);
+        if (!active()) return;
+        setStoreDirectory(directory.stores);
+        if (page === "care") {
+          const result = await request("/users", user);
+          if (!active()) return;
+          setUsers(result.users);
+          const tickets = await request("/support-tickets", user);
+          if (active()) setTickets(tickets.tickets);
+        } else {
+          const path = { users: "/users", orders: "/orders?limit=150", campaigns: "/campaigns" }[page];
+          const result = await request(path, user);
+          if (!active()) return;
+          if (page === "users") setUsers(result.users);
+          if (page === "orders") setOrders(result.orders);
+          if (page === "campaigns") setCampaigns(result.campaigns);
+        }
+      }
+    } catch (error) { if (active()) setError(error.message); }
+    finally { if (active()) { setLoading(false); setLoadedPage(page); } }
+  };
+  useEffect(() => { load(); return () => { requestSequence.current++; }; }, [page, user]);
+  const stores = storeDirectory || data?.stores || [];
+  const pageLoading = loading || loadedPage !== page;
+  const titles={overview:"Tổng quan",stores:"Cửa hàng",users:"Người dùng",subscriptions:"Subscription",campaigns:"Campaign thông báo",maintenance:"Bảo trì hệ thống",care:"Chăm sóc người dùng",orders:"Đơn hàng"};
+  return <div className="shell"><Sidebar page={page} setPage={setPage} user={user} onLogout={onLogout} open={menu} setOpen={setMenu}/><main className="main"><header className="topbar"><button className="icon-button menu" onClick={()=>setMenu(true)}><Menu size={20}/></button><strong>{titles[page]}</strong><button className="icon-button" onClick={load}><RefreshCw className={pageLoading?"spin":""} size={18}/></button></header><div className="content">{error&&<div className="error-banner">{error}</div>}{page==="overview"&&<Overview data={data} subscriptions={subscriptions} onStore={setDrawer} setPage={setPage}/>} {page==="stores"&&<Stores stores={stores} loading={pageLoading} onStore={setDrawer} onCreate={()=>setCreate(true)}/>} {page==="users"&&<UsersPage users={users} stores={stores} user={user} loading={pageLoading} reload={load}/>} {page==="subscriptions"&&<SubscriptionsPage subscriptions={subscriptions} user={user} loading={pageLoading} reload={load}/>} {page==="maintenance"&&<MaintenancePage user={user}/>} {page==="campaigns"&&<CampaignsPage campaigns={campaigns} stores={stores} user={user} loading={pageLoading} reload={load}/>} {page==="care"&&<CustomerCarePage users={users} tickets={tickets} stores={stores} user={user} loading={pageLoading} reload={load}/>} {page==="orders"&&<Orders orders={orders} stores={stores} loading={pageLoading}/>}</div></main>{drawer&&<StoreDrawer id={drawer} user={user} close={()=>setDrawer("")} reload={load}/>} {create&&<StoreRegistrationModal user={user} close={()=>setCreate(false)} created={load}/>}</div>;
 }
 
 export default function App({ initialUser }) {

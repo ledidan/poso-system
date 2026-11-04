@@ -3,7 +3,7 @@ import { createHash } from "crypto";
 import { PLANS, resolvePlan, monthPeriod, timestamp, planError } from "./PlanCatalog.js";
 export const entityKey = (shopID, id) => createHash("sha256").update(`${shopID}/${id}`).digest("hex").slice(0, 32);
 const validID = (id) => typeof id === "string" && id.length > 0 && !/[.#$\[\]/\u0000-\u001f]/.test(id);
-export const loadSubscription = async ({ db, shopID, now = Date.now() }) => {
+export const loadSubscription = async ({ db, shopID, now = Date.now(), initialize = true }) => {
   if (!validID(shopID)) throw planError("PLAN_SHOP_INVALID", "Mã cửa hàng không hợp lệ.");
   const rawDB = db[Symbol.for("poso.rawPlanDatabase")] || db;
   const group = await resolveSubscriptionGroup({ db: rawDB, shopID });
@@ -18,7 +18,7 @@ export const loadSubscription = async ({ db, shopID, now = Date.now() }) => {
   if (rootShopID !== shopID && !branchMap[shopID]) throw planError("PLAN_BRANCH_NOT_AVAILABLE", "Gian hàng chưa thuộc subscription này.", { shopID, rootShopID });
   const subscription = resolvePlan(license.val(), info.val() || {}, now);
   const result = { ...subscription, rootShopID, shopID, branchIDs: Object.keys(branchMap).filter((key) => branchMap[key]), period: monthPeriod(now), usageStartedAt: usageStarted.val() };
-  if (group.updates) {
+  if (group.updates && initialize) {
     // Seed usage before publishing canonical links, retaining all previously consumed orders.
     for (const kind of ["orders", "products", "users", "shops", "payroll"]) {
       const entries = await baselineEntries({ db: rawDB, subscription: { ...result, usageStartedAt: null }, kind });
@@ -126,12 +126,26 @@ export const finishReservation = async ({ db, reservation, committed }) => {
     return { ...meter, entries, pending, updatedAt: Date.now() };
   });
 };
-export const subscriptionUsage = async ({ db, subscription }) => {
+export const subscriptionUsage = async ({ db, subscription, initialize = true }) => {
   const usage = {};
   for (const kind of ["orders", "products", "users", "shops", "payroll"]) {
-    const meter = await ensureMeter({ db, subscription, kind });
+    let meter;
+    if (initialize) meter = await ensureMeter({ db, subscription, kind });
+    else {
+      const path = meterPath(subscription, kind), existing = (await db.ref(path).once("value")).val();
+      // Display legacy usage without creating meters or migrating store links.
+      meter = { path, value: existing || { entries: await baselineEntries({ db, subscription, kind }) } };
+    }
     const limit = subscription.limits[kind === "orders" ? "monthlyOrders" : kind];
-    const used = allocated(meter.value);
+    // Firebase omits empty arrays. Normalize a report-only copy; never alter the
+    // pending reservations or the accounting used by business writes.
+    const reportedMeter = initialize ? meter.value : {
+      ...meter.value,
+      pending: Object.fromEntries(Object.entries(meter.value?.pending || {}).map(([id, operation]) => [id, {
+        ...operation, adds: operation?.adds || [], removes: operation?.removes || []
+      }]))
+    };
+    const used = allocated(reportedMeter);
     usage[kind] = { used, limit, remaining: limit === null ? null : Math.max(0, limit - used) };
   }
   return usage;

@@ -6,7 +6,7 @@ import { createAdminAuth, authConfigured } from "./auth.js";
 import { createDatabaseAuthStore } from "./auth-store.js";
 import { applySecurity } from "./security.js";
 
-export const createApp = ({ services = {}, authStore, serveFrontend = true, prepareRequest } = {}) => {
+export const createApp = ({ services = {}, authStore, serveFrontend = true, prepareRequest, registerRoutes } = {}) => {
   const app = express();
   if (prepareRequest) app.use(prepareRequest);
   applySecurity(app);
@@ -18,6 +18,7 @@ export const createApp = ({ services = {}, authStore, serveFrontend = true, prep
     const ok = Boolean(services.db) && authConfigured();
     res.status(ok ? 200 : 503).json({ ok, timestamp: new Date().toISOString() });
   });
+  registerRoutes?.(app, { services, auth });
   app.use("/api/admin", services.db
     ? createAdminRouter({ ...services, authenticate: auth.requireAdmin })
     : [auth.requireAdmin, (req, res) => res.status(503).json({ message: "Dịch vụ dữ liệu tạm thời chưa sẵn sàng." })]);

@@ -128,3 +128,14 @@ tbody tr:hover { background:#fffaf7; }
 .store-form .report-select { margin:0; display:grid; gap:8px; }.report-select input[type=time] { max-width:155px; }.store-form .actions { position:sticky; bottom:0; background:#fff; padding:14px 0 0; border-top:1px solid var(--line); }
 
 .report-push-preview { border-top:1px solid var(--line); padding-top:14px; display:grid; gap:10px; }.report-push-preview>strong { font-size:13px; }.report-push-preview>small { color:#737871; font-size:11px; line-height:1.5; }.report-preview-tabs { display:flex; flex-wrap:wrap; gap:6px; }.report-preview-tabs button { padding:6px 9px; border:1px solid var(--line); background:#fff; color:#61665f; border-radius:8px; cursor:pointer; font:inherit; font-size:11px; }.report-preview-tabs button[aria-pressed=true] { background:#fff1e7; border-color:#eb5b00; color:#a53e00; }.report-push-preview article { background:#f7f8f6; border:1px solid var(--line); border-radius:11px; padding:13px; }.report-push-preview article strong { font-size:12px; line-height:1.6; }.report-push-preview article p { font-size:12px; line-height:1.7; margin:7px 0 0; color:#61665f; }
+
+.registration-modal { width: min(720px, 100%); }
+.registration-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
+.registration-fields > label { display: flex; flex-direction: column; min-width: 0; gap: 8px; margin-bottom: 18px; font-size: 13px; font-weight: 600; }
+.registration-input { display: flex; min-width: 0; align-items: center; border: 1px solid #dfe2dc; border-radius: 10px; padding: 0 12px; gap: 10px; background: #fbfcfa; color: #8f969b; }
+.registration-input:focus-within { border-color: var(--purple); box-shadow: 0 0 0 3px #7566c816; }
+.registration-input > svg { flex-shrink: 0; }
+.registration-modal .registration-input input, .registration-modal .registration-input select { width: 100%; min-width: 0; border: 0; padding: 13px 0; margin: 0; background: transparent; outline: none; box-shadow: none; color: #26313b; font-weight: 400; }
+.registration-input .icon-button { flex-shrink: 0; }
+.registration-success { display: flex; align-items: center; gap: 10px; padding: 14px; background: #edf8f0; color: #287a44; border-radius: 10px; margin-bottom: 20px; font-size: 14px; }
+@media (max-width: 600px) { .registration-fields { grid-template-columns: minmax(0, 1fr); } }

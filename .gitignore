@@ -3,6 +3,10 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.worker.production.example
+!.env.vercel.production.example
+/env
+.vercel/
 .DS_Store
 npm-debug.log*
 .dev.vars
@@ -10,3 +14,5 @@ npm-debug.log*
 !.dev.vars.example
 .wrangler/
 worker-dist/
+.vercel
+.env*

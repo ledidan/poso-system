@@ -1,0 +1,15 @@
+.git/
+node_modules/
+dist/
+.env
+.env.*
+env
+.dev.vars
+.dev.vars.*
+.wrangler/
+.vercel/
+worker-dist/
+test/
+docs/
+*.log
+.DS_Store

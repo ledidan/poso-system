@@ -1,3 +1,4 @@
+import { createAccountMailer } from "../AccountEmail.js";
 import { createGoogleTokenProvider } from "./google-auth.js";
 import { createRestDatabase } from "./database-rest.js";
 import { createRestMessaging } from "./messaging-rest.js";
@@ -13,5 +14,5 @@ export const createWorkerServices = (env) => {
   const messagingProjectId = env.FCM_FIREBASE_PROJECT_ID || env.FIREBASE_PROJECT_ID;
   const messagingToken = createGoogleTokenProvider({ email: env.FCM_FIREBASE_CLIENT_EMAIL || env.FIREBASE_CLIENT_EMAIL, privateKey: env.FCM_FIREBASE_PRIVATE_KEY || env.FIREBASE_PRIVATE_KEY, scope: "https://www.googleapis.com/auth/firebase.messaging" });
   const securityDb = createRestDatabase({ databaseURL: env.FIREBASE_DATABASE_URL, getToken: databaseToken });
-  return { securityDb, db: createPlanDatabase(securityDb), messaging: createRestMessaging({ projectId: messagingProjectId, getToken: messagingToken }), messagingProjectId };
+  return { accountMailer: createAccountMailer(env), securityDb, db: createPlanDatabase(securityDb), messaging: createRestMessaging({ projectId: messagingProjectId, getToken: messagingToken }), messagingProjectId };
 };

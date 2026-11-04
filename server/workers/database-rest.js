@@ -1,6 +1,8 @@
 // A stateless subset of the Admin Database interface used by this application.
 // Conditional REST writes retain transaction semantics across Worker instances.
-const snapshot = (value) => ({ val: () => structuredClone(value), exists: () => value !== null && value !== undefined });
+// Every REST response already owns freshly parsed data. Return it directly instead
+// of copying the entire database subtree each time a snapshot is inspected.
+const snapshot = (value) => ({ val: () => value, exists: () => value !== null && value !== undefined });
 const validSegment = (value) => value.length > 0 && !/[.#$\[\]\u0000-\u001f\u007f]/.test(value);
 const serialize = (value) => JSON.stringify(value, (key, item) => {
   if (item === undefined || typeof item === "function" || typeof item === "symbol" || (typeof item === "number" && !Number.isFinite(item))) throw new Error("Invalid database value.");
@@ -21,8 +23,15 @@ export const createRestDatabase = ({ databaseURL, getToken, fetcher = fetch }) =
     const payload = body !== undefined ? serialize(body) : undefined;
     const response = await fetcher(url, { method, headers: { Authorization: `Bearer ${await getToken()}`, "Content-Type": "application/json", ...headers }, ...(payload !== undefined ? { body: payload } : {}), signal: AbortSignal.timeout(20_000) });
     if (!response.ok && response.status !== 412) {
-      await response.body?.cancel();
-      throw new Error(`Database request failed (${response.status}).`);
+      const details = await response.json().catch(() => ({}));
+      const missingIndex = typeof details.error === "string" && details.error.match(/Index not defined, add "\.indexOn": "([^"]+)"/);
+      const error = new Error(missingIndex
+        ? `Database query requires index ${missingIndex[1]} at /${path}.`
+        : `Database request failed (${response.status}).`);
+      error.code = missingIndex ? "DATABASE_INDEX_REQUIRED" : "DATABASE_REQUEST_FAILED";
+      error.databaseStatus = response.status;
+      if (missingIndex) console.error("Database query missing index:", { path, field: missingIndex[1] });
+      throw error;
     }
     return response;
   };
@@ -84,7 +93,10 @@ export const createRestDatabase = ({ databaseURL, getToken, fetcher = fetch }) =
     };
     return ref;
   };
-  return { ref: (path) => {
+  return { async listKeys(path) {
+    const value = await (await send(normalize(path), { query: { shallow: true } })).json();
+    return value && typeof value === "object" ? Object.keys(value) : [];
+  }, ref: (path) => {
     if (path === undefined) return reference("");
     if (path === "") throw new Error("Explicit empty database paths are invalid.");
     return reference(normalize(path));

@@ -1,5 +1,29 @@
 # Deploy POSO Central Admin trên Cloudflare Workers
 
+Lỗi `1102 / exceededCpu` và database 400 ngày 29/10/2026: xem
+[báo cáo và các bước xử lý tài nguyên/index](worker-resource-limits-2026-10-29.md).
+Các API tổng hợp hiện tại cần Workers Paid để có đủ CPU/subrequest; source mới
+đã giảm dữ liệu đọc và số API tải cùng lúc, nhưng chưa chứng minh chạy được trên
+quota Free.
+
+## Target production đang sử dụng
+
+- Worker name: `poso-system`.
+- Origin: `https://poso-system.purple-mouse-e853.workers.dev`.
+- Health: `https://poso-system.purple-mouse-e853.workers.dev/api/health`.
+- File mẫu đúng domain: `.env.worker.production.example`.
+
+Không nhập secrets vào Worker `poso-central-admin`: đó là tên mặc định trước
+đây, khác Worker đang phục vụ domain trên. Khi `/` trả 200 nhưng toàn bộ `/api/*`
+trả 503 kèm thông báo cấu hình triển khai, vào Logs của **poso-system** và tìm
+`Worker initialization failed:`. Dòng này ghi lý do thật, còn response public
+giữ thông báo chung để không lộ cấu hình hệ thống.
+
+File `.env` hoặc `.dev.vars` trên máy local không tự trở thành secrets của
+deployment Cloudflare. Điền `.env.worker.production` từ file mẫu production,
+rồi deploy với `--secrets-file`, hoặc lưu secrets trực tiếp trong Settings của
+đúng Worker. Không sửa `.env` local thành domain production.
+
 Không cần VPS. React và font được phục vụ bằng Workers Assets; API Express chạy
 trong Workers qua `httpServerHandler`. Database hiện có được giữ nguyên, truy cập
 qua HTTPS REST với service account. Không cần chuyển dữ liệu sang D1/KV.
@@ -30,7 +54,7 @@ chỉ các file `*.example` đã làm sạch được đưa vào source. `.dev.v
    50 subrequest/invocation, có thể không đủ cho bcrypt, xuất Excel và tổng hợp
    nhiều cửa hàng. Chưa đo CPU/quota trên deployment thật. Không có thay đổi gói
    hoặc phát sinh deployment nào được thực hiện trong bước chuẩn bị này.
-3. Kiểm tra tên Worker trong `wrangler.jsonc`: mặc định `poso-central-admin`.
+3. Kiểm tra tên Worker trong `wrangler.jsonc`: `poso-system`.
    Đổi tên nếu account đã có Worker khác cùng tên.
 4. Trước deploy, thay các private key/secret từng nằm trong file mẫu cũ. Bản mẫu
    hiện chỉ chứa placeholder; làm sạch file không thu hồi các key cũ.
@@ -53,7 +77,7 @@ Express/body-parser trong Workers.
 ## 3. Tạo file secrets production riêng
 
 ```bash
-cp .dev.vars.example .env.worker.production
+cp .env.worker.production.example .env.worker.production
 chmod 600 .env.worker.production
 ```
 
@@ -100,7 +124,7 @@ credential chính. Service account gửi thông báo phải có quyền gửi FC
 HTTP v1 API phải được bật. Không dùng API key của ứng dụng web thay private key.
 
 Khi chưa có custom domain, có thể đặt `ADMIN_ORIGIN` thành Workers URL của account:
-`https://poso-central-admin.<your-workers-subdomain>.workers.dev`. Lấy subdomain
+`https://poso-system.<your-workers-subdomain>.workers.dev`. Lấy subdomain
 thực tế trong Cloudflare account; không dùng nguyên placeholder này. Sau khi
 chuyển custom domain, cập nhật origin rồi deploy lại. Mỗi deployment chỉ chấp
 nhận một origin cho request ghi; mở ứng dụng bằng đúng origin đó.
@@ -153,7 +177,7 @@ Secrets → Add → Type **Secret** → Deploy. Không đặt password/private k
 
 ## 6. Custom domain
 
-1. Vào Workers & Pages → Worker `poso-central-admin` → Settings → Domains & Routes.
+1. Vào Workers & Pages → Worker `poso-system` → Settings → Domains & Routes.
 2. Add → Custom Domain, nhập domain anh muốn, ví dụ `admin.example.com`, thuộc
    zone đã quản lý trên Cloudflare.
 3. Chờ domain/TLS hoạt động. Dùng cùng domain cho cả frontend và `/api/*`.

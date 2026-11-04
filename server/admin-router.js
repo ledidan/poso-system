@@ -1,3 +1,5 @@
+import { registerStoreAccount, deliverStoreAccountEmail } from "./StoreRegistration.js";
+import { createAccountMailer } from "./AccountEmail.js";
 import { reportRoleOptions, updateDailyRevenueSettings } from "./daily-revenue-settings.js";
 import { loadSubscription, subscriptionUsage } from "./subscriptions/SubscriptionService.js";
 import { PLANS } from "./subscriptions/PlanCatalog.js";
@@ -6,7 +8,9 @@ import bcrypt from "bcryptjs";
 import { customAlphabet } from "nanoid";
 import { requireAdmin } from "./auth.js";
 import { createMaintenanceRouter } from "./maintenance.js";
-import { activeshops as activeshops, asNumber, normalizeOrder, safeBasicInfo, summarizeStore, withinDays } from "./store-summary.js";
+import { createAdminReadContext, mapLimited } from "./admin-read.js";
+import { readAdminStores } from "./admin-overview.js";
+import { asNumber, normalizeOrder, safeBasicInfo, summarizeStore } from "./store-summary.js";
 import { resolveSubscriptionGroup } from "./subscriptions/ResolveSubscriptionGroup.js";
 import {
   REVENUE_AVERAGE_OPTIONS,
@@ -66,7 +70,7 @@ const buildOrderDetails = (shopId, shop = {}) => {
   return orders.sort((a, b) => Date.parse(b.timeStamp || 0) - Date.parse(a.timeStamp || 0));
 };
 
-export const createAdminRouter = ({ db, messaging, messagingProjectId = "", authenticate = requireAdmin }) => {
+export const createAdminRouter = ({ db, messaging, messagingProjectId = "", authenticate = requireAdmin, adminReadOptions = {}, accountMailer = createAccountMailer() }) => {
   const router = express.Router();
 
   router.use(authenticate);
@@ -84,12 +88,10 @@ export const createAdminRouter = ({ db, messaging, messagingProjectId = "", auth
   router.get("/overview", async (req, res) => {
     try {
       const days = Math.min(Math.max(asNumber(req.query.days) || 30, 1), 365);
-      const [snapshot, usersSnapshot] = await Promise.all([
-        db.ref("shops").once("value"),
-        db.ref("users").once("value")
-      ]);
-      const shops = activeshops(snapshot.val() || {});
-      const stores = entries(shops).map(([shopId, shop]) => summarizeStore(shopId, shop, days));
+      const context = createAdminReadContext(db, adminReadOptions);
+      const shops = await context.loadShopProfiles();
+      const userCount = (await context.keys("users")).length;
+      const { stores, recentOrders } = await readAdminStores(context, shops, { days, includeRecent: true });
       const totals = stores.reduce((result, store) => ({
         revenue: result.revenue + store.revenue,
         orderCount: result.orderCount + store.orderCount,
@@ -97,21 +99,21 @@ export const createAdminRouter = ({ db, messaging, messagingProjectId = "", auth
         customerCount: result.customerCount + store.customerCount
       }), { revenue: 0, orderCount: 0, activeOrderCount: 0, customerCount: 0 });
 
-      const packages = (await Promise.all(entries(shops).filter(([id, shop]) => !shop.subscriptionRootID || shop.subscriptionRootID === id).map(async ([id, shop]) => { const subscription = await loadSubscription({ db, shopID: id }); return subscription.rootShopID === id ? readSubscription(shop) : null; }))).filter(Boolean);
+      const packages = (await mapLimited(entries(shops).filter(([id, shop]) => !shop.subscriptionRootID || shop.subscriptionRootID === id), async ([id, shop]) => { const subscription = await loadSubscription({ db: context.db, shopID: id, initialize: false }); return subscription.rootShopID === id ? readSubscription(shop) : null; }, context.concurrency)).filter(Boolean);
       const expiringSoon = packages.filter((item) => ["active", "trial"].includes(item.licenseStatus) && item.expiresAt && Date.parse(item.expiresAt) >= Date.now() && Date.parse(item.expiresAt) < Date.now() + 14 * 86400000).length;
       res.json({
         days,
         totals: {
           ...totals,
           storeCount: stores.length,
-          userCount: Object.keys(usersSnapshot.val() || {}).length,
+          userCount,
           subscriptionActiveCount: packages.filter((item) => ["active", "downgraded"].includes(item.licenseStatus)).length,
           subscriptionTrialCount: packages.filter((item) => item.licenseStatus === "trial").length,
           subscriptionSuspendedCount: packages.filter((item) => ["suspended", "inactive", "expired", "invalid", "notStarted"].includes(item.licenseStatus)).length,
           subscriptionExpiringCount: expiringSoon
         },
         stores,
-        recentOrders: buildOrders(shops).filter((order) => order.bucket === "activeOrders" || withinDays(order, days)).slice(0, 12)
+        recentOrders
       });
     } catch (error) {
       res.status(500).json({ message: "Không thể tải dữ liệu tổng quan." });
@@ -121,11 +123,22 @@ export const createAdminRouter = ({ db, messaging, messagingProjectId = "", auth
   router.get("/stores", async (req, res) => {
     try {
       const days = Math.min(Math.max(asNumber(req.query.days) || 30, 1), 365);
-      const snapshot = await db.ref("shops").once("value");
-      res.json({ stores: entries(activeshops(snapshot.val())).map(([id, shop]) => summarizeStore(id, shop, days)) });
+      const context = createAdminReadContext(db, adminReadOptions), shops = await context.loadShopProfiles();
+      const { stores } = await readAdminStores(context, shops, { days });
+      res.json({ stores });
     } catch {
       res.status(500).json({ message: "Không thể tải danh sách cửa hàng." });
     }
+  });
+
+  router.get("/store-options", async (req, res) => {
+    try {
+      const context = createAdminReadContext(db, adminReadOptions), shops = await context.loadShopProfiles({ directoryOnly: true });
+      res.json({ stores: entries(shops).map(([id, shop]) => {
+        const basic = safeBasicInfo(id, shop.basicInfo);
+        return { id, name: basic.name, address: basic.address, status: basic.membership.status || "active" };
+      }) });
+    } catch { res.status(500).json({ message: "Không thể tải danh mục cửa hàng." }); }
   });
 
   router.get("/stores/export.xlsx", async (req, res) => {
@@ -148,26 +161,30 @@ export const createAdminRouter = ({ db, messaging, messagingProjectId = "", auth
   });
 
   router.post("/stores", async (req, res) => {
-    const { name, address = "", phoneNumber = "", businessCategory = "" } = req.body || {};
-    if (!String(name || "").trim()) return res.status(400).json({ message: "Tên cửa hàng là bắt buộc." });
-    const shopId = createId();
-    const trial = createTrial();
-    const basicInfo = {
-      id: shopId,
-      name: String(name).trim(),
-      address: String(address).trim(),
-      phoneNumber: String(phoneNumber).trim(),
-      businessCategory: String(businessCategory).trim(),
-      createdAt: new Date().toISOString(),
-      membership: { status: "active" },
-      packageInfo: trial.packageInfo
-    };
     try {
-      await db.ref(`shops/${shopId}`).set({ basicInfo, license: trial.license, subscriptionInfo: trial.subscriptionInfo, subscriptionRootID: shopId, subscriptionUsageStartedAt: Date.now(), subscriptionBranches: { [shopId]: true } });
-      res.status(201).json({ store: summarizeStore(shopId, { basicInfo }) });
+      const registration = await registerStoreAccount({ database: db, input: req.body, createdBy: req.adminUser.username });
+      const emailDelivery = registration.created
+        ? await deliverStoreAccountEmail({ database: db, registration, mailer: accountMailer })
+        : registration.emailDelivery;
+      const basicInfo = registration.basicInfo || (await db.ref(`shops/${registration.shopId}/basicInfo`).once("value")).val();
+      res.status(201).json({ store: summarizeStore(registration.shopId, { basicInfo }), account: { username: registration.username }, emailDelivery });
     } catch (error) {
-      res.status(error.status || 500).json({ code: error.code, message: error.status ? error.message : "Không thể tạo cửa hàng." });
+      res.status(error.status || 500).json({ code: error.status ? error.code : "STORE_REGISTRATION_FAILED", message: error.status ? error.message : "Không thể tạo cửa hàng và tài khoản. Vui lòng thử lại." });
     }
+  });
+
+  router.post("/stores/:shopId/account-email", async (req, res) => {
+    try {
+      const registrationId = req.body?.registrationId;
+      if (typeof registrationId !== "string" || !/^[a-f0-9-]{36}$/i.test(registrationId)) return res.status(400).json({ message: "Mã yêu cầu không hợp lệ." });
+      const record = (await db.ref(`systemAdmin/storeRegistrations/${registrationId}`).once("value")).val();
+      if (!record || record.shopId !== req.params.shopId) return res.status(404).json({ message: "Không tìm thấy yêu cầu cấp tài khoản." });
+      const [userSnap, basicSnap] = await Promise.all([db.ref(`users/${record.username}`).once("value"), db.ref(`shops/${record.shopId}/basicInfo`).once("value")]);
+      const user = userSnap.val(), basic = basicSnap.val();
+      if (!basic || user?.shops?.[record.shopId]?.role !== "owner" || user.isActive === false || typeof req.body.password !== "string" || req.body.password.length < 8 || new TextEncoder().encode(req.body.password).length > 72 || /[\x00-\x1f\x7f]/.test(req.body.password) || !await bcrypt.compare(req.body.password, user.password || "")) return res.status(400).json({ message: "Thông tin tài khoản không hợp lệ để gửi lại email." });
+      const emailDelivery = await deliverStoreAccountEmail({ database: db, registration: { ...record, info: { ...record.customer, registrationId, username: record.username, password: req.body.password } }, mailer: accountMailer });
+      res.json({ emailDelivery });
+    } catch { res.status(503).json({ message: "Chưa thể gửi lại email cấp tài khoản." }); }
   });
 
   router.get("/stores/:shopId", async (req, res) => {
@@ -343,22 +360,16 @@ export const createAdminRouter = ({ db, messaging, messagingProjectId = "", auth
 
   router.get("/users", async (req, res) => {
     try {
-      const [usersSnapshot, shopsSnapshot] = await Promise.all([
-        db.ref("users").once("value"),
-        db.ref("shops").once("value")
-      ]);
-      const shops = shopsSnapshot.val() || {};
-      const users = entries(usersSnapshot.val()).map(([username, user]) => ({
-        username,
-        stores: entries(user.shops).map(([shopId, membership]) => ({
-          shopId,
-          shopName: safeBasicInfo(shopId, shops[shopId]?.basicInfo).name,
-          personnelID: membership.personnelID || "",
-          name: membership.personnelName || username,
-          role: membership.role || "Nhân viên",
-          isActive: membership.isActive !== false
-        }))
-      }));
+      const context = createAdminReadContext(db, adminReadOptions), usernames = await context.keys("users");
+      const users = await mapLimited(usernames, async (username) => {
+        const memberships = (await context.read(`users/${username}/shops`)).val() || {};
+        const stores = await mapLimited(entries(memberships), async ([shopId, membership]) => ({
+          shopId, shopName: safeBasicInfo(shopId, (await context.read(`shops/${shopId}/basicInfo`)).val() || {}).name,
+          personnelID: membership.personnelID || "", name: membership.personnelName || username,
+          role: membership.role || "Nhân viên", isActive: membership.isActive !== false
+        }), context.concurrency);
+        return { username, stores };
+      }, context.concurrency);
       res.json({ users });
     } catch {
       res.status(500).json({ message: "Không thể tải danh sách người dùng." });
@@ -459,15 +470,14 @@ export const createAdminRouter = ({ db, messaging, messagingProjectId = "", auth
 
   router.get("/subscriptions", async (req, res) => {
     try {
-      const snapshot = await db.ref("shops").once("value");
-      const shops = activeshops(snapshot.val());
-      const subscriptions = await Promise.all(entries(shops).filter(([shopId, shop]) => !shop.subscriptionRootID || shop.subscriptionRootID === shopId).map(async ([shopId, shop]) => {
-        const subscription = await loadSubscription({ db, shopID: shopId });
+      const context = createAdminReadContext(db, adminReadOptions), shops = await context.loadShopProfiles();
+      const subscriptions = await mapLimited(entries(shops).filter(([shopId, shop]) => !shop.subscriptionRootID || shop.subscriptionRootID === shopId), async ([shopId, shop]) => {
+        const subscription = await loadSubscription({ db: context.db, shopID: shopId, initialize: false });
         if (subscription.rootShopID !== shopId) return null;
         subscription.branchIDs = subscription.branchIDs.filter((id) => shops[id]);
-        const usage = await subscriptionUsage({ db, subscription });
+        const usage = await subscriptionUsage({ db: context.db, subscription, initialize: false });
         return { shopId, shopName: safeBasicInfo(shopId, shop.basicInfo).name, ...readSubscription(shop), usage, remainingOrders: usage.orders.remaining, branchIDs: subscription.branchIDs };
-      }));
+      }, context.concurrency);
       res.json({ subscriptions: subscriptions.filter(Boolean), plans: Object.values(PLANS) });
     } catch {
       res.status(500).json({ message: "Không thể tải danh sách subscription." });

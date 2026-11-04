@@ -4,13 +4,13 @@ import { authConfigured } from "./auth.js";
 
 export const trustedProxies = () => {
   const value = process.env.TRUST_PROXY?.trim();
-  if (!value) return false;
+  if (!value || value.toLowerCase() === "false") return false;
   const entries = value.split(",").map((part) => part.trim());
   for (const entry of entries) {
     const [address, prefix, ...extra] = entry.split("/");
     const family = isIP(address);
     if (!family || extra.length || (prefix !== undefined && (!/^\d+$/.test(prefix) || Number(prefix) > (family === 4 ? 32 : 128)))) {
-      throw new Error("TRUST_PROXY must contain explicit trusted IP addresses or CIDRs.");
+      throw new Error("TRUST_PROXY must be empty, false, or contain explicit trusted IP addresses or CIDRs.");
     }
     const list = new BlockList();
     if (prefix === undefined) list.addAddress(address, family === 4 ? "ipv4" : "ipv6");

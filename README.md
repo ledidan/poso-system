@@ -4,6 +4,10 @@ Hệ thống quản trị tập trung, tách biệt với `be-online-ordering`. 
 React + Vite, API dùng Express và đọc Firebase Realtime Database bằng Firebase
 Admin SDK.
 
+Deploy không dùng VPS: [Vercel production](docs/deploy-vercel.md) hoặc
+[Cloudflare Workers](docs/deploy-cloudflare-workers.md). Vercel đã có Node API
+entrypoint, cấu hình SPA và Cron riêng; env mẫu ở `.env.vercel.production.example`.
+
 ## Chức năng
 
 - Dashboard doanh thu, đơn hàng, tổng người dùng và kiểm soát subscription.

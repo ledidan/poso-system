@@ -13,3 +13,10 @@ FIREBASE_DATABASE_URL=
 FCM_FIREBASE_PROJECT_ID=
 FCM_FIREBASE_CLIENT_EMAIL=
 FCM_FIREBASE_PRIVATE_KEY=""
+
+# Account provisioning emails (server secrets only). Gmail uses an App Password.
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM=
